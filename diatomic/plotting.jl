@@ -42,7 +42,7 @@ end
 
 function plotStarkMap(mol::MoleculeHamiltonian, StarkScan; N = [0], energyRef = 0)
     basisUC = getBasisUC(mol.MolOp.basisTree)
-    spinDim = prod([length(Nuclear.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
+    spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
     indsOI = [[sum([(2*N_i2 + 1)*36 for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*36 for N_i2 in 0:N_i])] for N_i in N]
     p = plot()
     for rotationalStates in indsOI,  state in (rotationalStates[1] + 1):rotationalStates[2]

@@ -1,17 +1,18 @@
 using LinearAlgebra
 using Tullio
+using Base.Threads
 function transition_dipole_moment(Hamiltonian::MoleculeHamiltonian, gs, eigenstates; M = [-1, 0, 1], comp = [1, 1, 1])
     dipoleMat = DipoleMatrix(Hamiltonian.MolOp)
     tdm = zeros(Float64, length(gs), 3)
     println(size(dipoleMat[1]), " ", size(eigenstates),  " ", size(dipoleMat[1]*eigenstates))
-    for m_i in M
-        
+    @threads for m_i in M
         d = dipoleMat[m_i + 2] 
         @tullio tdm_t[k] := gs[i]*d[i, j]*eigenstates[j, k] #eigenstates*dipoleMat[m_i + 2])*gs#[dot(gs, temp[:, i]) for i in 1:size(temp, 2)] #dot(gs, dipoleMat[m_i + 2]*eigenstates)
         tdm[:, m_i + 2] = real.(tdm_t)*comp[m_i + 2]
     end
     tdm
 end
+
 
 
 function findState(stateOI::State, eigsol::sol)
@@ -23,7 +24,9 @@ function findState(width::Vector{T}, eigenergy::Vector{T}) where {T<:Real}
     findall(eigenergy .> minimum(width) .&& eigenergy .< maximum(width))
 end
 
-function findTransition(Hamiltonian::MoleculeHamiltonian, stateOI, eigsol, TransitionEnergy; M = [-1, 0, 1], width = 5e3, strength = 10, comp = [1, 1, 1])
+
+
+function findTransition(Hamiltonian::MoleculeHamiltonian, stateOI::State, eigsol::sol, TransitionEnergy; M = [-1, 0, 1], width = 5e3, strength = 10, comp = [1, 1, 1])
     indOI = findState(stateOI, eigsol)
 
     println("Starting from $(KetName(eigsol.vec[:, indOI], basisUC))")

@@ -76,6 +76,8 @@ export scanZeeman, scanStark, diagonalize, sol
 import ..Hamiltonian: MoleculeHamiltonian
 using LinearAlgebra
 using Arpack
+using SparseArrays
+
 
 struct sol
     B_field
@@ -84,7 +86,7 @@ struct sol
     val
 end
 
-function diagonalize(H::MoleculeHamiltonian, B_field, E_field; Intensity = 1,  nev = 36)
+function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,  nev = 36) where {T<:AbstractMatrix}
     J2Hz = 1.509190311676e33 
     
     vals, vecs = eigen(Hermitian(Matrix(H.Hhfs .+ H.Hzeem*B_field .+ E_field*H.Hdc + sum(Intensity .* H.Hac))))
@@ -93,19 +95,27 @@ function diagonalize(H::MoleculeHamiltonian, B_field, E_field; Intensity = 1,  n
     vecs = vecs[:, sorted_indices]
     sol(B_field, E_field, vecs, vals*J2Hz)
 end
-function scanZeeman(H::MoleculeHamiltonian, B_field::Vector{<:Real}, E_field::T) where T<:Number
+function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,  nev = 36) where T<:SparseMatrixCSC
+    J2Hz = 1.509190311676e33 
+    vals, vecs = eigs(H.Hhfs .+ H.Hzeem*B_field .+ E_field*H.Hdc + sum(Intensity .* H.Hac), nev = nev, which=:SM)
+    sorted_indices = sortperm(real.(vals))
+    vals = vals[sorted_indices]
+    vecs = vecs[:, sorted_indices]
+    sol(B_field, E_field, vecs, vals*J2Hz)
+end
+function scanZeeman(H::MoleculeHamiltonian, B_field::Vector{<:Real}, E_field::T; nev = 36) where T<:Number
     J2Hz = 1.509190311676e33 
     solutions = Vector{sol}(undef, length(B_field))
     for (i, B_i) in enumerate(B_field)
-        solutions[i] = diagonalize(H, B_i , E_field)
+        solutions[i] = diagonalize(H, B_i , E_field, nev = nev)
     end
     solutions
 end
-function scanStark(H::MoleculeHamiltonian, B_field::T, E_field::Vector{<:Real}) where T<:Number
+function scanStark(H::MoleculeHamiltonian, B_field::T, E_field::Vector{<:Real}; nev = 36) where T<:Number
     J2Hz = 1.509190311676e33 
     solutions = Vector{sol}(undef, length(E_field))
     for (i, E_i) in enumerate(E_field)
-        solutions[i] = diagonalize(H, B_field , E_i)
+        solutions[i] = diagonalize(H, B_field , E_i, nev = nev)
     end
     solutions
 end

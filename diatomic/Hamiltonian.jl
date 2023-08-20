@@ -1,12 +1,12 @@
 import Base.*
 import Rotations: RotZYZ
 
-struct MoleculeHamiltonian
+struct MoleculeHamiltonian{T}
     MolOp
-    Hhfs
-    Hzeem
-    Hdc
-    Hac
+    Hhfs::T
+    Hzeem::T
+    Hdc::T
+    Hac::Vector{T}
 end
 using WignerSymbols
 using Base.Threads
@@ -18,18 +18,32 @@ function generateHamiltonian(Molecule::moleculeProperties; dirB= [0, 0, 1], dirE
     Hfs = Matrix(HyperFine_Ham(Molecule))
     Hzeem = Matrix(zeeman_ham(Molecule, normalize!(dirB)))
     Hdc = Matrix(dc(Molecule, normalize!(dirE)))
-    Hac = []#
+    Hac = Matrix{ComplexF64}[]#
     for (key, value) in Beams
         push!(Hac,  Matrix(AC_Stark(Molecule, value)))
     end
     if isempty(Hac)
         push!(Hac, zeros(ComplexF64, size(Hdc)))
     end
+    MoleculeHamiltonian(Molecule, Hfs, Hzeem, Hdc, Hac)
+end
+
+
+function generateHamiltonianSparse(Molecule::moleculeProperties; dirB= [0, 0, 1], dirE = [0, 0, 1.0], Beams = Dict())#, beams = OpticalTrap[])
+    Hfs = HyperFine_Ham(Molecule)
+    Hzeem = zeeman_ham(Molecule, normalize!(dirB))
+    Hdc = dc(Molecule, normalize!(dirE))
+    Hac = SparseMatrixCSC{ComplexF64}[]#
+    for (key, value) in Beams
+        push!(Hac,  AC_Stark(Molecule, value))
+    end
+    if isempty(Hac)
+        push!(Hac, spzeros(ComplexF64, size(Hdc)))
+    end
 
     MoleculeHamiltonian(Molecule, Hfs, Hzeem, Hdc, Hac)
-
-
 end
+
 
 const PhysConstants = Dict("c" => 2.99798458E8, "hbar" => 1.054571E-34, "kb" => 1.3806452E-23, "e0" => 8.85418E-12, "q_c" => 1.60217663e-19, "m_e" => 9.11e-31)
 
@@ -88,8 +102,9 @@ function compute_SHC_elements!(operator, q, N; order = 2)
     
     for (j, state) in enumerate(getBasis(N.spin)), (k, state2) in enumerate(getBasis(N.spin))
         if true #abs(state[2] - state2[2]) <= order && -1*state[1] + state2[1] + q == 0
-            mNp, Np = state2 
             mN, N1 = state
+            mNp, Np = state2 
+            
 
             operator[j, k] = (-1)^(mN) * sqrt((2*N1 + 1)*(2*Np + 1)) * wigner3j(N1, order, Np, -mN, q, mNp) * wigner3j(N1, order, Np, 0, 0, 0)
         end
@@ -247,6 +262,7 @@ end
 
 function tensor_dot(T1, T2; order = 2)
     Tprod = spzeros(ComplexF64, size(T1[1])...)
+    T2 = reverse(T2)
     for (i, q) in enumerate(-order:order)
         Tprod += ((-1)^q)*T1[i]*T2[i]
     end
