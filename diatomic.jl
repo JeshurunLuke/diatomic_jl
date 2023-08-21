@@ -7,7 +7,7 @@ import .QuantumWrapper: AM_Toolbox
 import .QuantumWrapper.State_Toolbox.State
 import .QuantumWrapper.State_Toolbox.KetName
 
-export Molecule, Hamiltonian, solve, plotting, calculate, AM_Toolbox, getBasisUC, State
+export Molecule, Hamiltonian, solve, plotting, calculate, AM_Toolbox, getBasisUC, State, KetName
 
 function getBasisUC end
 
@@ -75,7 +75,7 @@ end
 
 ##### Used to solve the Hamiltonian ################################
 module solve
-export scanZeeman, scanStark, diagonalize, sol
+export scanZeeman, scanStark, diagonalize, sol, scanIntensity
 import ..Hamiltonian: MoleculeHamiltonian
 using LinearAlgebra
 using Arpack
@@ -85,6 +85,7 @@ using SparseArrays
 struct sol
     B_field
     E_field
+    Intensity
     vec
     val
 end
@@ -96,7 +97,7 @@ function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,
     sorted_indices = sortperm(vals)
     vals = vals[sorted_indices]
     vecs = vecs[:, sorted_indices]
-    sol(B_field, E_field, vecs, vals*J2Hz)
+    sol(B_field, E_field, [Intensity...], vecs, vals*J2Hz)
 end
 function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,  nev = 36) where T<:SparseMatrixCSC
     J2Hz = 1.509190311676e33 
@@ -104,23 +105,32 @@ function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,
     sorted_indices = sortperm(real.(vals))
     vals = vals[sorted_indices]
     vecs = vecs[:, sorted_indices]
-    sol(B_field, E_field, vecs, real.(vals)*J2Hz)
+    sol(B_field, E_field, [Intensity...], vecs, real.(vals)*J2Hz)
 end
 
-
-function scanZeeman(H::MoleculeHamiltonian, B_field::Vector{<:Real}, E_field::T; nev = 36) where T<:Number
+function scanIntensity(H::MoleculeHamiltonian, B_Field::T, E_Field::T, Intensity) where T<:Number
     J2Hz = 1.509190311676e33 
-    solutions = Vector{sol}(undef, length(B_field))
-    for (i, B_i) in enumerate(B_field)
-        solutions[i] = diagonalize(H, B_i , E_field, nev = nev)
+    solutions = Vector{sol}(undef, size(Intensity, 1))
+    for (i, Int_i) in enumerate(Intensity)
+        solutions[i] = diagonalize(H, B_Field, E_Field, Intensity = Int_i)
     end
     solutions
 end
-function scanStark(H::MoleculeHamiltonian, B_field::T, E_field::Vector{<:Real}; nev = 36) where T<:Number
+
+
+function scanZeeman(H::MoleculeHamiltonian, B_field::Vector{<:Real}, E_field::T; Intensity = 1, nev = 36) where T<:Number
+    J2Hz = 1.509190311676e33 
+    solutions = Vector{sol}(undef, length(B_field))
+    for (i, B_i) in enumerate(B_field)
+        solutions[i] = diagonalize(H, B_i , E_field, Intensity = 1, nev = nev)
+    end
+    solutions
+end
+function scanStark(H::MoleculeHamiltonian, B_field::T, E_field::Vector{<:Real}; Intensity = 1, nev = 36) where T<:Number
     J2Hz = 1.509190311676e33 
     solutions = Vector{sol}(undef, length(E_field))
     for (i, E_i) in enumerate(E_field)
-        solutions[i] = diagonalize(H, B_field , E_i, nev = nev)
+        solutions[i] = diagonalize(H, B_field , E_i, Intensity= 1, nev = nev)
     end
     solutions
 end
@@ -128,7 +138,7 @@ end
 
 ######## Plotting Utils ###############
 module plotting
-export plotZeemanMap, plotStarkMap
+export plotZeemanMap, plotStarkMap, plotIntensityScan
 using ..QuantumWrapper.State_Toolbox
 using ..QuantumWrapper.AM_Toolbox
 import ..Hamiltonian: MoleculeHamiltonian
@@ -139,15 +149,20 @@ end
 module calculate
 export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment
 using ..QuantumWrapper.State_Toolbox
-import ..QuantumWrapper.AM_Toolbox: Basis, Node, getBasisUC
+import ..QuantumWrapper.AM_Toolbox: Basis, Node, getBasisUC, endNode
 import ..Hamiltonian: MoleculeHamiltonian, DipoleMatrix, zeeman_ham, dc
 
 import ..solve: sol
 import ..QuantumWrapper.State_Toolbox.State
+import ..QuantumWrapper.State_Toolbox.Ket
+import ..QuantumWrapper.State_Toolbox.KetName
 include("diatomic/calculate.jl")
 
 State(comp::Array{ComplexF64, 2}, QN::Array{Float64, 2}, mol::MoleculeHamiltonian) = State(normalize!(comp), QN, getBasisUC(mol.MolOp.basisTree))
-State(QN::Vector{<:Any}, mol::MoleculeHamiltonian) = State([1.0], QN, getBasisUC(mol.MolOp.basisTree) )
+State(QN::Vector{<:Float64}, mol::MoleculeHamiltonian) = State([1.0], [QN], getBasisUC(mol.MolOp.basisTree) )
+State(comp::Vector{<:ComplexF64}, mol::MoleculeHamiltonian) = State(comp, getBasisUC(mol.MolOp.basisTree) , getBasisUC(mol.MolOp.basisTree) )
+KetName(state::Vector{<:ComplexF64}, mol::MoleculeHamiltonian; QMorder = [5, 3, 2, 1]) = KetName(state, getBasisUC(mol.MolOp.basisTree), QMorder = QMorder )
+KetName(state::State, mol::MoleculeHamiltonian; QMorder = [5, 3, 2, 1]) = KetName(Ket(state), getBasisUC(mol.MolOp.basisTree), QMorder = QMorder )
 end
 
 

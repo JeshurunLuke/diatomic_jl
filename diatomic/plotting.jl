@@ -38,6 +38,19 @@ function plotZeemanMap(mol::MoleculeHamiltonian, sol_vec; N = [0], energyRef = 0
     p
 end
 
+function plotIntensityScan(mol::MoleculeHamiltonian, sol_vec; N = [0], Beam = 1, energyRef = 0)
+    basisUC = getBasisUC(mol.MolOp.basisTree)
+    spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
+    indsOI = [[sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])] for N_i in N]
+    p = plot()
+    for rotationalStates in indsOI,  state in (rotationalStates[1] + 1):rotationalStates[2]
+        addtraces!(p, scatter(x = [sol_i.Intensity[Beam] for sol_i in sol_vec], y = [sol_i.val[state] - energyRef for sol_i in sol_vec]*1e-9, text=[KetName(sol_i.vec[:, state], basisUC) for sol_i in sol_vec], name = "State $state"))
+    end
+    set_figure_style!(p, title = "Intensity Scan", xlabel = "Intensity (W/m)", ylabel = "Energy (GHz)")
+    p
+end
+
+
 
 
 function plotStarkMap(mol::MoleculeHamiltonian, StarkScan; N = [0], energyRef = 0)

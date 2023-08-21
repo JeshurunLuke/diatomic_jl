@@ -22,6 +22,7 @@ function transition_dipole_moment(H::MoleculeHamiltonian, gs, eigenstates,  M)
 end
 
 
+
 function magnetic_moment(H::MoleculeHamiltonian, eigenstates)
     muz = zeeman_ham(H.MolOp, [0, 0, 1.0])
     @tullio mu[k] := conj.(eigenstates)[j, k]*muz[j, l]*eigenstates[l, k]
@@ -33,7 +34,9 @@ function electric_moment(H::MoleculeHamiltonian, eigenstates)
 end
 
 
-
+function findState(stateOI::Vector{<:Complex}, eigsol::sol)
+    findMaxOverlap(stateOI, eigsol.vec)
+end
 
 function findState(stateOI::State, eigsol::sol)
     basisState = Ket(stateOI)
@@ -44,9 +47,7 @@ function findState(width::Vector{T}, eigenergy::Vector{T}) where {T<:Real}
     findall(eigenergy .> minimum(width) .&& eigenergy .< maximum(width))
 end
 
-
-
-function findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol, TransitionEnergy; M = [-1, 0, 1], width = 5e3, strength = 10, comp = [1, 1, 1])
+function findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol, TransitionEnergy::Number; M = [-1, 0, 1], width = 5e3, strength = 10, comp = [1, 1, 1])
     indOI = findState(stateOI, eigsol)
 
     println("Starting from $(KetName(eigsol.vec[:, indOI], basisUC))")
@@ -62,6 +63,25 @@ function findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol, Tra
     indstest, eigsol.vec[:, indstest], eigsol.val[indstest] .-eigsol.val[indOI], tdm[indstest, :] 
 end
 
+
+
+findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 10, comp = [1, 1, 1]) = findTransition(H, Ket(stateOI), eigsol;  M = M, NumOfStates = NumOfStates, comp = comp)
+function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 50, comp = [1, 1, 1])
+    indOI = findState(stateOI, eigsol)
+    basisUC = getBasisUC(H.MolOp.basisTree)
+    println("Starting from $(KetName(eigsol.vec[:, indOI], basisUC))")
+    tdm = transition_dipole_moment(H, eigsol.vec[:, indOI], eigsol.vec, M = M, comp = normalize!(comp))
+
+    indOrder = reverse(sortperm(vec(sum(abs.(tdm[:, :]), dims = 2))))
+
+
+    println("Found $(length(indOrder))")
+    indOrder, eigsol.vec[:, indOrder[1:NumOfStates]], eigsol.val[indOrder[1:NumOfStates]] .-eigsol.val[indOI], tdm[indOrder[1:NumOfStates], :] 
+end
+
+
+
+
 function findMaxOverlap(basisState, eigvec)
     overlap = 0
     indOI = 0 
@@ -74,3 +94,4 @@ function findMaxOverlap(basisState, eigvec)
     end
     indOI
 end
+

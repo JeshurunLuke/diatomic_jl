@@ -40,6 +40,6 @@ function KetName(state::Vector{<:Any}, basis; QMorder = [5, 3, 2, 1])
     
 end
 
-State(comp::Vector{<:Any}, QN::Vector{<:Any},     basis::Vector{<:Any}) = State(ComplexF64.(hcat(comp...)), Matrix(hcat(QN...)), Matrix(hcat(basis...)'))
+State(comp::Vector{<:Any}, QN::Vector{<:Any},     basis::Vector{<:Any}) = State(ComplexF64.(hcat(comp...)), Matrix(hcat(QN...)'), Matrix(hcat(basis...)'))
 
 
