@@ -4,7 +4,10 @@ module diatomic_jl
 include("QuantumToolbox/QuantumWrapper.jl")
 using .QuantumWrapper
 import .QuantumWrapper: AM_Toolbox
-export Molecule, Hamiltonian, solve, plotting, calculate, AM_Toolbox, getBasisUC
+import .QuantumWrapper.State_Toolbox.State
+import .QuantumWrapper.State_Toolbox.KetName
+
+export Molecule, Hamiltonian, solve, plotting, calculate, AM_Toolbox, getBasisUC, State
 
 function getBasisUC end
 
@@ -62,7 +65,7 @@ end
 module Hamiltonian
 import ..QuantumWrapper.AM_Toolbox: endNode, getBasis#, getBasisUC
 import ..QuantumWrapper: AM_Toolbox
-export generateHamiltonian, OpticalBeam, MoleculeHamiltonian
+export generateHamiltonian, OpticalBeam, MoleculeHamiltonian, zeeman_ham, dc, DipoleMatrix
 import ..Molecule: moleculeProperties
 include("diatomic/Hamiltonian.jl")
 using ..diatomic_jl
@@ -101,8 +104,10 @@ function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,
     sorted_indices = sortperm(real.(vals))
     vals = vals[sorted_indices]
     vecs = vecs[:, sorted_indices]
-    sol(B_field, E_field, vecs, vals*J2Hz)
+    sol(B_field, E_field, vecs, real.(vals)*J2Hz)
 end
+
+
 function scanZeeman(H::MoleculeHamiltonian, B_field::Vector{<:Real}, E_field::T; nev = 36) where T<:Number
     J2Hz = 1.509190311676e33 
     solutions = Vector{sol}(undef, length(B_field))
@@ -132,10 +137,11 @@ include("diatomic/plotting.jl")
 end
 
 module calculate
-export findState, findTransition, transition_dipole_moment
+export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment
 using ..QuantumWrapper.State_Toolbox
 import ..QuantumWrapper.AM_Toolbox: Basis, Node, getBasisUC
-import ..Hamiltonian: MoleculeHamiltonian
+import ..Hamiltonian: MoleculeHamiltonian, DipoleMatrix, zeeman_ham, dc
+
 import ..solve: sol
 import ..QuantumWrapper.State_Toolbox.State
 include("diatomic/calculate.jl")

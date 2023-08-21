@@ -1,8 +1,8 @@
 using LinearAlgebra
 using Tullio
 using Base.Threads
-function transition_dipole_moment(Hamiltonian::MoleculeHamiltonian, gs, eigenstates; M = [-1, 0, 1], comp = [1, 1, 1])
-    dipoleMat = DipoleMatrix(Hamiltonian.MolOp)
+function transition_dipole_moment(H::MoleculeHamiltonian, gs, eigenstates; M = [-1, 0, 1], comp = [1, 1, 1])
+    dipoleMat = DipoleMatrix(H.MolOp)
     tdm = zeros(Float64, length(gs), 3)
     println(size(dipoleMat[1]), " ", size(eigenstates),  " ", size(dipoleMat[1]*eigenstates))
     @threads for m_i in M
@@ -12,6 +12,26 @@ function transition_dipole_moment(Hamiltonian::MoleculeHamiltonian, gs, eigensta
     end
     tdm
 end
+
+
+function transition_dipole_moment(H::MoleculeHamiltonian, gs, eigenstates,  M)
+    dipoleMat = DipoleMatrix(H.MolOp)
+    tdm = zeros(Float64, length(gs), 3)
+    d = dipoleMat[M + 2]
+    @tullio tdm_t[k] := gs[i]*d[i, j]*eigenstates[j, k]
+end
+
+
+function magnetic_moment(H::MoleculeHamiltonian, eigenstates)
+    muz = zeeman_ham(H.MolOp, [0, 0, 1.0])
+    @tullio mu[k] := conj.(eigenstates)[j, k]*muz[j, l]*eigenstates[l, k]
+end
+
+function electric_moment(H::MoleculeHamiltonian, eigenstates)
+    dz = -1*dc(H.MolOp, [0, 0, 1.0])
+    @tullio d[k] := conj.(eigenstates)[j, k]*dz[j, l]*eigenstates[l, k]
+end
+
 
 
 
@@ -26,11 +46,11 @@ end
 
 
 
-function findTransition(Hamiltonian::MoleculeHamiltonian, stateOI::State, eigsol::sol, TransitionEnergy; M = [-1, 0, 1], width = 5e3, strength = 10, comp = [1, 1, 1])
+function findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol, TransitionEnergy; M = [-1, 0, 1], width = 5e3, strength = 10, comp = [1, 1, 1])
     indOI = findState(stateOI, eigsol)
 
     println("Starting from $(KetName(eigsol.vec[:, indOI], basisUC))")
-    tdm = transition_dipole_moment(Hamiltonian, eigsol.vec[:, indOI], eigsol.vec, M = M, comp = normalize!(comp))
+    tdm = transition_dipole_moment(H, eigsol.vec[:, indOI], eigsol.vec, M = M, comp = normalize!(comp))
 
 
     energyCenter = real.(eigsol.val[indOI] + TransitionEnergy)
