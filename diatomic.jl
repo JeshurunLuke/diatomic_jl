@@ -147,7 +147,7 @@ include("diatomic/plotting.jl")
 end
 
 module calculate
-export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment
+export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment, diabaticRamp, findMaxOverlap
 using ..QuantumWrapper.State_Toolbox
 import ..QuantumWrapper.AM_Toolbox: Basis, Node, getBasisUC, endNode
 import ..Hamiltonian: MoleculeHamiltonian, DipoleMatrix, zeeman_ham, dc

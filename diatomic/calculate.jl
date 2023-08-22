@@ -65,24 +65,56 @@ end
 
 
 
-findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 10, comp = [1, 1, 1]) = findTransition(H, Ket(stateOI), eigsol;  M = M, NumOfStates = NumOfStates, comp = comp)
-function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 50, comp = [1, 1, 1])
+findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 10, comp = [1.0, 1, 1]) = findTransition(H, Ket(stateOI), eigsol;  M = M, NumOfStates = NumOfStates, comp = comp)
+findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol, N::Vector{<:Int};  M = [-1, 0, 1], NumOfStates = 10, comp = [1.0, 1, 1]) = findTransition(H, Ket(stateOI), eigsol, N;  M = M, NumOfStates = NumOfStates, comp = comp)
+function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 50, comp = [1.0, 1, 1], display = true)
     indOI = findState(stateOI, eigsol)
     basisUC = getBasisUC(H.MolOp.basisTree)
     println("Starting from $(KetName(eigsol.vec[:, indOI], basisUC))")
     tdm = transition_dipole_moment(H, eigsol.vec[:, indOI], eigsol.vec, M = M, comp = normalize!(comp))
 
     indOrder = reverse(sortperm(vec(sum(abs.(tdm[:, :]), dims = 2))))
+    stateName, eigvec, eigval, tdm = indOrder, eigsol.vec[:, indOrder[1:NumOfStates]], eigsol.val[indOrder[1:NumOfStates]] .-eigsol.val[indOI], tdm[indOrder[1:NumOfStates], :] 
 
 
-    println("Found $(length(indOrder))")
-    indOrder, eigsol.vec[:, indOrder[1:NumOfStates]], eigsol.val[indOrder[1:NumOfStates]] .-eigsol.val[indOI], tdm[indOrder[1:NumOfStates], :] 
+    if display
+        for state in 1:length(eigval)
+            println("State: ", KetName(eigvec[:, state], basisUC), "| Energy (MHz): ", eigval[state]*1e-6)
+            println("\t TDM [sigma_m, pi, sigma_p] = $(tdm[state, :])")
+        end
+    end
+
+
+    stateName, eigvec, eigval, tdm
+end
+function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigsol::sol, N::Vector{<:Int};  M = [-1, 0, 1], NumOfStates = 50, comp = [1.0, 1, 1], display = true)
+    indOI = findState(stateOI, eigsol)
+    basisUC = getBasisUC(H.MolOp.basisTree)
+    println("Starting from $(KetName(eigsol.vec[:, indOI], basisUC))")
+    tdm = transition_dipole_moment(H, eigsol.vec[:, indOI], eigsol.vec, M = M, comp = normalize!(comp))
+
+    spinDim = (prod([length(NuclearSpin.spin) for NuclearSpin in endNode(H.MolOp.basisTree)[2:end]]))
+    NOI = vcat([[(sum(spinDim.*[(2*N_i2 + 1) for N_i2 in 0:(N_i-1)]) + 1):sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])...] for N_i in N]...)
+    
+    indOrder = reverse(sortperm(vec(sum(abs.(tdm[:, :]), dims = 2))))
+    indOrder = intersect(indOrder, NOI)
+
+    stateName, eigvec, eigval, tdm = indOrder, eigsol.vec[:, indOrder[1:NumOfStates]], eigsol.val[indOrder[1:NumOfStates]] .-eigsol.val[indOI], tdm[indOrder[1:NumOfStates], :] 
+
+    if display
+        for state in 1:length(eigval)
+            println("State: ", KetName(eigvec[:, state], basisUC), "\t| Energy (MHz): ", eigval[state]*1e-6)
+            println("\t TDM [sigma_m, pi, sigma_p] = $(tdm[state, :])")
+        end
+    end
+
+    stateName, eigvec, eigval, tdm
 end
 
 
 
-
-function findMaxOverlap(basisState, eigvec)
+findMaxOverlap(basisState::State, eigvec) = findMaxOverlap(Ket(basisState), eigvec)
+function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec)
     overlap = 0
     indOI = 0 
     for ind in 1:size(eigvec, 2)
@@ -95,3 +127,25 @@ function findMaxOverlap(basisState, eigvec)
     indOI
 end
 
+
+diabaticRamp(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = diabaticRamp(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
+diabaticRamp(Hmol::MoleculeHamiltonian, startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = State(diabaticRamp(Ket(startingState), eigsol_vec, Field_ramp, Field = Field), Hmol)
+function diabaticRamp(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B")
+    Field_s = zeros(Float64, length([1 for i in eigsol_vec]))#Vector{Float64}[]
+    if Field == "B"
+        Field_s = [eigsol.B_field for eigsol in eigsol_vec]
+    else Field == "E"
+        Field_s = [eigsol.E_field for eigsol in eigsol_vec]
+    end
+
+        #[eigsol.B_Field for eigsol in eigsol_vec]
+    indStart = argmin(abs.(Field_s .- Field_ramp[1]))
+    indEnd = argmin(abs.(Field_s .- Field_ramp[1]))
+
+    moleculeind = findMaxOverlap(startingState, eigsol_vec[indStart].vec)
+
+    for ind_c in (indStart-1):-1:indEnd
+        moleculeind = findMaxOverlap(eigsol_vec[ind_c + 1].vec[:, moleculeInd], eigsol_vec[ind_c].vec)#getMaxOverlap(stateOI_n, composition_m[ind, :, :])
+    end
+    eigsol_vec[indEnd].vec[:, moleculeind]
+end
