@@ -147,7 +147,7 @@ include("diatomic/plotting.jl")
 end
 
 module calculate
-export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment, diabaticRamp, findMaxOverlap
+export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment, diabaticRamp, findMaxOverlap, findAvoidedCrossing
 using ..QuantumWrapper.State_Toolbox
 import ..QuantumWrapper.AM_Toolbox: Basis, Node, getBasisUC, endNode
 import ..Hamiltonian: MoleculeHamiltonian, DipoleMatrix, zeeman_ham, dc
@@ -163,6 +163,49 @@ State(QN::Vector{<:Float64}, mol::MoleculeHamiltonian) = State([1.0], [QN], getB
 State(comp::Vector{<:ComplexF64}, mol::MoleculeHamiltonian) = State(comp, getBasisUC(mol.MolOp.basisTree) , getBasisUC(mol.MolOp.basisTree) )
 KetName(state::Vector{<:ComplexF64}, mol::MoleculeHamiltonian; QMorder = [5, 3, 2, 1]) = KetName(state, getBasisUC(mol.MolOp.basisTree), QMorder = QMorder )
 KetName(state::State, mol::MoleculeHamiltonian; QMorder = [5, 3, 2, 1]) = KetName(Ket(state), getBasisUC(mol.MolOp.basisTree), QMorder = QMorder )
+function diabaticRamp(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B")
+    Field_s = zeros(Float64, length([1 for i in eigsol_vec]))#Vector{Float64}[]
+    if Field == "B"
+        Field_s = [eigsol.B_field for eigsol in eigsol_vec]
+    else Field == "E"
+        Field_s = [eigsol.E_field for eigsol in eigsol_vec]
+    end
+
+        #[eigsol.B_Field for eigsol in eigsol_vec]
+    indStart = argmin(abs.(Field_s .- Field_ramp[1]))
+    indEnd = argmin(abs.(Field_s .- Field_ramp[2]))
+
+    moleculeind = findMaxOverlap(startingState, eigsol_vec[indStart].vec)
+    for ind_c in (indStart-1):-1:indEnd
+        moleculeind = findMaxOverlap(eigsol_vec[ind_c + 1].vec[:, moleculeind], eigsol_vec[ind_c].vec)#getMaxOverlap(stateOI_n, composition_m[ind, :, :])
+    end
+
+    eigsol_vec[indEnd].vec[:, moleculeind]
+end
+function findAvoidedCrossing(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B")
+    Field_s = zeros(Float64, length([1 for i in eigsol_vec]))
+    if Field == "B"
+        Field_s = [eigsol.B_field for eigsol in eigsol_vec]
+    else Field == "E"
+        Field_s = [eigsol.E_field for eigsol in eigsol_vec]
+    end
+
+        #[eigsol.B_Field for eigsol in eigsol_vec]
+    indStart = argmin(abs.(Field_s .- Field_ramp[1]))
+    indEnd = argmin(abs.(Field_s .- Field_ramp[2]))
+
+    moleculeind = findMaxOverlap(startingState, eigsol_vec[indStart].vec)
+    avoided_crossing = []
+    for ind_c in (indStart - 1):-1:indEnd
+        moleculeind_c = findMaxOverlap(eigsol_vec[ind_c + 1].vec[:, moleculeind], eigsol_vec[ind_c].vec)#getMaxOverlap(stateOI_n, composition_m[ind, :, :])
+        if abs.(moleculeind_c - moleculeind) > 0
+            energyGap =  abs.(eigsol_vec[ind_c + 1].val[moleculeind] - eigsol_vec[ind_c].val[moleculeind_c])
+            push!(avoided_crossing, [(Field_s[ind_c] + Field_s[ind_c + 1])/2,energyGap])
+        end
+        moleculeind = moleculeind_c
+    end
+    avoided_crossing
+end
 end
 
 

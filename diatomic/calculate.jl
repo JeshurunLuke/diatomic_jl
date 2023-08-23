@@ -130,22 +130,6 @@ end
 
 diabaticRamp(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = diabaticRamp(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
 diabaticRamp(Hmol::MoleculeHamiltonian, startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = State(diabaticRamp(Ket(startingState), eigsol_vec, Field_ramp, Field = Field), Hmol)
-function diabaticRamp(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B")
-    Field_s = zeros(Float64, length([1 for i in eigsol_vec]))#Vector{Float64}[]
-    if Field == "B"
-        Field_s = [eigsol.B_field for eigsol in eigsol_vec]
-    else Field == "E"
-        Field_s = [eigsol.E_field for eigsol in eigsol_vec]
-    end
 
-        #[eigsol.B_Field for eigsol in eigsol_vec]
-    indStart = argmin(abs.(Field_s .- Field_ramp[1]))
-    indEnd = argmin(abs.(Field_s .- Field_ramp[1]))
 
-    moleculeind = findMaxOverlap(startingState, eigsol_vec[indStart].vec)
-
-    for ind_c in (indStart-1):-1:indEnd
-        moleculeind = findMaxOverlap(eigsol_vec[ind_c + 1].vec[:, moleculeInd], eigsol_vec[ind_c].vec)#getMaxOverlap(stateOI_n, composition_m[ind, :, :])
-    end
-    eigsol_vec[indEnd].vec[:, moleculeind]
-end
+findAvoidedCrossing(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = findAvoidedCrossing(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
