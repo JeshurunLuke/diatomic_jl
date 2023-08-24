@@ -4,7 +4,7 @@ export AM_Toolbox, SpinOperator, State_Toolbox
 
 module AM_Toolbox
 include("AM_Toolbox.jl")
-export Node, Basis, endNode,  length, SpinBasis, AngularNode, getBasisFC, generateLayers, layerwise_transformation, ⊗, angularMomentum, getUnitary, couple, is_unitary, getBasisUC, getBasis
+export Node, Basis, endNode,  length, SpinBasis, AngularNode, getBasisFC, generateLayers, layerwise_transformation, ⊗, angularMomentum, getUnitary, couple, is_unitary, getBasisUC, getBasis, step_up
 
 end
 

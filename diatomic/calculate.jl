@@ -14,6 +14,35 @@ function transition_dipole_moment(H::MoleculeHamiltonian, gs, eigenstates; M = [
 end
 
 
+
+label_states_I_MI(Hmol::MoleculeHamiltonian, state::State) = State(label_states_I_MI(Hmol, Ket(state)), getBasisFC(Hmol.MolOp.basisTree,"I_c"), getBasisFC(Hmol.MolOp.basisTree,"I_c"))
+label_states_I_MI(Hmol::MoleculeHamiltonian, eigsol::sol) = label_states_I_MI(Hmol, eigsol.vec)
+function label_states_I_MI(Hmol::MoleculeHamiltonian, state::Vector{<:ComplexF64})
+    UnitaryUC2I = step_up(Hmol, "I_c")
+    UnitaryUC2I*state
+end
+
+function label_states_I_MI(Hmol::MoleculeHamiltonian, eigstate::Matrix{<:ComplexF64})
+    UnitaryUC2I = step_up(Hmol, "I_c")
+    UnitaryUC2I*eigstate*adjoint(UnitaryUC2I)
+end
+
+
+
+label_states_F_MF(Hmol::MoleculeHamiltonian, state::State) = State(label_states_F_MF(Hmol, Ket(state)), getBasisFC(Hmol.MolOp.basisTree,"F"), getBasisFC(Hmol.MolOp.basisTree,"F"))
+label_states_F_MF(Hmol::MoleculeHamiltonian, eigsol::sol) = label_states_F_MF(Hmol, eigsol.vec)
+function label_states_F_MF(Hmol::MoleculeHamiltonian, state::Vector{<:ComplexF64})
+    UnitaryUC2F = step_up(Hmol, "F")
+    UnitaryUC2F*state
+end
+
+function label_states_F_MF(Hmol::MoleculeHamiltonian, eigstate::Matrix{<:ComplexF64})
+    UnitaryUC2F = step_up(Hmol, "F")
+    UnitaryUC2F*eigstate*adjoint(UnitaryUC2F)
+end
+
+
+
 function transition_dipole_moment(H::MoleculeHamiltonian, gs, eigenstates,  M)
     dipoleMat = DipoleMatrix(H.MolOp)
     tdm = zeros(Float64, length(gs), 3)
@@ -42,7 +71,6 @@ function findState(stateOI::State, eigsol::sol)
     basisState = Ket(stateOI)
     findMaxOverlap(basisState, eigsol.vec)
 end
-
 function findState(width::Vector{T}, eigenergy::Vector{T}) where {T<:Real}
     findall(eigenergy .> minimum(width) .&& eigenergy .< maximum(width))
 end
@@ -130,6 +158,49 @@ end
 
 diabaticRamp(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = diabaticRamp(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
 diabaticRamp(Hmol::MoleculeHamiltonian, startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = State(diabaticRamp(Ket(startingState), eigsol_vec, Field_ramp, Field = Field), Hmol)
+function diabaticRamp(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B")
+    Field_s = zeros(Float64, length([1 for i in eigsol_vec]))#Vector{Float64}[]
+    if Field == "B"
+        Field_s = [eigsol.B_field for eigsol in eigsol_vec]
+    else Field == "E"
+        Field_s = [eigsol.E_field for eigsol in eigsol_vec]
+    end
 
+        #[eigsol.B_Field for eigsol in eigsol_vec]
+    indStart = argmin(abs.(Field_s .- Field_ramp[1]))
+    indEnd = argmin(abs.(Field_s .- Field_ramp[2]))
+
+    moleculeind = findMaxOverlap(startingState, eigsol_vec[indStart].vec)
+    for ind_c in (indStart-1):-1:indEnd
+        moleculeind = findMaxOverlap(eigsol_vec[ind_c + 1].vec[:, moleculeind], eigsol_vec[ind_c].vec)#getMaxOverlap(stateOI_n, composition_m[ind, :, :])
+    end
+
+    eigsol_vec[indEnd].vec[:, moleculeind]
+end
 
 findAvoidedCrossing(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = findAvoidedCrossing(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
+
+function findAvoidedCrossing(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B")
+    Field_s = zeros(Float64, length([1 for i in eigsol_vec]))
+    if Field == "B"
+        Field_s = [eigsol.B_field for eigsol in eigsol_vec]
+    else Field == "E"
+        Field_s = [eigsol.E_field for eigsol in eigsol_vec]
+    end
+
+        #[eigsol.B_Field for eigsol in eigsol_vec]
+    indStart = argmin(abs.(Field_s .- Field_ramp[1]))
+    indEnd = argmin(abs.(Field_s .- Field_ramp[2]))
+
+    moleculeind = findMaxOverlap(startingState, eigsol_vec[indStart].vec)
+    avoided_crossing = []
+    for ind_c in (indStart - 1):-1:indEnd
+        moleculeind_c = findMaxOverlap(eigsol_vec[ind_c + 1].vec[:, moleculeind], eigsol_vec[ind_c].vec)#getMaxOverlap(stateOI_n, composition_m[ind, :, :])
+        if abs.(moleculeind_c - moleculeind) > 0
+            energyGap =  abs.(eigsol_vec[ind_c + 1].val[moleculeind] - eigsol_vec[ind_c].val[moleculeind_c])
+            push!(avoided_crossing, [(Field_s[ind_c] + Field_s[ind_c + 1])/2,energyGap])
+        end
+        moleculeind = moleculeind_c
+    end
+    avoided_crossing
+end

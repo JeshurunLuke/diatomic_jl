@@ -76,7 +76,44 @@ function generateLayers(root::AngularNode)
     layers
 end
 
+#Step up generates the unitary transformation from the base most node (UC basis) to the layer specified
+step_up(root::AngularNode) = step_up(root::AngularNode, root.name)
+function step_up(root::AngularNode, name::String)
+    
+    target_size = length(getBasis(root.spin))
+    layers = generateLayers(root)
+    endLayer = (length(layers) + 1) - (getLayerDepth(root, name))
+    transformations = []
+    for (depth, layer) in enumerate((reverse(layers)[1:endLayer]))
+        for node in reverse(layer)
+            # Calculate the size of the identity matrix to tensor with
+            unitary_rows = size(node.unitary, 1)
+            
+            # Ensure that the tensoring is possible
+            if target_size % unitary_rows != 0
+                throw(DimensionMismatch("Cannot resize unitary of size $unitary_rows to target size $target_size"))
+            end
+            
+            id_size = target_size ÷ unitary_rows
+            
+            # Construct the transformation for this node using sparse identities
+            try
+                transformation = kron(
+                    spdiagm(0 => ones(Complex{Float64}, id_size)), 
+                    node.unitary
+                )
+                push!(transformations, transformation)
+            catch e
+                println("Error in constructing transformation at node: $(node.name), depth: $depth")
+                rethrow(e)
+            end
+        end
+    end
+    return prod(transformations)
+end
 
+
+#Layerwise Transformation generates the unitary from a specified layer to the FC basis
 function layerwise_transformation(root::AngularNode, name::String)
     endLayer = getLayerDepth(root, name)
     target_size = length(getBasis(root.spin))
