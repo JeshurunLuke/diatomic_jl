@@ -4,7 +4,7 @@ using Base.Threads
 function transition_dipole_moment(H::MoleculeHamiltonian, gs, eigenstates; M = [-1, 0, 1], comp = [1, 1, 1])
     dipoleMat = DipoleMatrix(H.MolOp)
     tdm = zeros(Float64, length(gs), 3)
-    println(size(dipoleMat[1]), " ", size(eigenstates),  " ", size(dipoleMat[1]*eigenstates))
+    
     @threads for m_i in M
         d = dipoleMat[m_i + 2] 
         @tullio tdm_t[k] := gs[i]*d[i, j]*eigenstates[j, k] #eigenstates*dipoleMat[m_i + 2])*gs#[dot(gs, temp[:, i]) for i in 1:size(temp, 2)] #dot(gs, dipoleMat[m_i + 2]*eigenstates)
@@ -91,8 +91,6 @@ function findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol, Tra
     indstest, eigsol.vec[:, indstest], eigsol.val[indstest] .-eigsol.val[indOI], tdm[indstest, :] 
 end
 
-
-
 findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 10, comp = [1.0, 1, 1]) = findTransition(H, Ket(stateOI), eigsol;  M = M, NumOfStates = NumOfStates, comp = comp)
 findTransition(H::MoleculeHamiltonian, stateOI::State, eigsol::sol, N::Vector{<:Int};  M = [-1, 0, 1], NumOfStates = 10, comp = [1.0, 1, 1]) = findTransition(H, Ket(stateOI), eigsol, N;  M = M, NumOfStates = NumOfStates, comp = comp)
 function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigsol::sol;  M = [-1, 0, 1], NumOfStates = 50, comp = [1.0, 1, 1], display = true)
@@ -177,6 +175,34 @@ function diabaticRamp(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol},
 
     eigsol_vec[indEnd].vec[:, moleculeind]
 end
+
+
+
+scanDiabiaticEnergy(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = scanDiabiaticEnergy(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
+scanDiabiaticEnergy(Hmol::MoleculeHamiltonian, startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = scanDiabiaticEnergy(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
+
+function scanDiabiaticEnergy(startingState::Vector{<:Complex}, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B")
+    Field_s = zeros(Float64, length([1 for i in eigsol_vec]))#Vector{Float64}[]
+    if Field == "B"
+        Field_s = [eigsol.B_field for eigsol in eigsol_vec]
+    else Field == "E"
+        Field_s = [eigsol.E_field for eigsol in eigsol_vec]
+    end
+
+        #[eigsol.B_Field for eigsol in eigsol_vec]
+    indStart = argmin(abs.(Field_s .- Field_ramp[1]))
+    indEnd = argmin(abs.(Field_s .- Field_ramp[2]))
+    energyList = []
+    moleculeind = findMaxOverlap(startingState, eigsol_vec[indStart].vec)
+    push!(energyList, eigsol_vec[indStart].val[moleculeind])
+    for ind_c in (indStart-1):-1:indEnd
+        moleculeind = findMaxOverlap(eigsol_vec[ind_c + 1].vec[:, moleculeind], eigsol_vec[ind_c].vec)#getMaxOverlap(stateOI_n, composition_m[ind, :, :])
+        push!(energyList, eigsol_vec[ind_c].val[moleculeind])
+    end
+    reverse(energyList)
+end
+
+
 
 findAvoidedCrossing(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = findAvoidedCrossing(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)
 

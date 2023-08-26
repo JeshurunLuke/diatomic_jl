@@ -139,17 +139,10 @@ end
 end
 
 ######## Plotting Utils ###############
-module plotting
-export plotZeemanMap, plotStarkMap, plotIntensityScan
-using ..QuantumWrapper.State_Toolbox
-using ..QuantumWrapper.AM_Toolbox
-import ..Hamiltonian: MoleculeHamiltonian
-import ..solve: sol
-include("diatomic/plotting.jl")
-end
+
 
 module calculate
-export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment, diabaticRamp, findMaxOverlap, findAvoidedCrossing
+export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment, diabaticRamp, findMaxOverlap, findAvoidedCrossing, scanDiabiaticEnergy
 using ..QuantumWrapper.State_Toolbox
 import ..QuantumWrapper.AM_Toolbox: Basis, Node, getBasisUC, endNode
 import ..Hamiltonian: MoleculeHamiltonian, DipoleMatrix, zeeman_ham, dc
@@ -167,7 +160,118 @@ KetName(state::Vector{<:ComplexF64}, mol::MoleculeHamiltonian; QMorder = [5, 3, 
 KetName(state::State, mol::MoleculeHamiltonian; QMorder = [5, 3, 2, 1]) = KetName(Ket(state), getBasisUC(mol.MolOp.basisTree), QMorder = QMorder )
 KetName(state::State) = KetName(Ket(state), state.basis)
 end
+module plotting
+export plotZeemanMap, plotStarkMap, plotIntensityScan, plotTransitionPlot
+using ..QuantumWrapper.State_Toolbox
+using ..QuantumWrapper.AM_Toolbox
+import ..Hamiltonian: MoleculeHamiltonian
+import ..QuantumWrapper.State_Toolbox.Ket
+import ..solve: sol
+using ..calculate
+import CairoMakie
+#import GLMakie
+include("diatomic/plotting.jl")
 
+plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::State, sol_vec::Vector{sol}, var::String; Adiabatic = true, rev = true,  N = [0], Beam = 1, energyRef = 0 , comp = [1.0, 1.0, 1.0]) = plotTransitionPlot(mol, Ket(stateOI), sol_vec, var; Adiabatic = Adiabatic, rev = rev,  N = N, Beam = Beam, energyRef = energyRef , comp = comp)
+plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::State,  stateFinal::State, sol_vec::Vector{sol}, var::String; Adiabatic = true, rev = true, Beam = 1, energyRef = 0 , comp = [1.0, 1.0, 1.0]) = plotTransitionPlot(mol, Ket(stateOI), Ket(stateFinal), sol_vec, var; Adiabatic = Adiabatic, rev = rev, Beam = Beam, energyRef = energyRef , comp = comp)
+function plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::Vector{<:ComplexF64}, stateFinal::Vector{<:ComplexF64}, sol_vec::Vector{sol}, var::String; Adiabatic = true, rev = true, Beam = 1, energyRef = 0 , comp = [1.0, 1.0, 1.0])
+    x = Vector{Float64}(undef, length([1 for i in sol_vec]))
+
+    plotObj = CairoMakie
+
+    fig = plotObj.Figure()
+    ax = plotObj.Axis(fig[1, 1], ylabel = "Energy (GHz)")
+    if var == "I"
+        x = [sol_i.Intensity[Beam] for sol_i in sol_vec]
+        ax.xlabel = "Intensity (W/m)"
+    elseif  var =="B"
+        x = [sol_i.B_field for sol_i in sol_vec]*1e-4
+        ax.xlabel = "B-Field (G)"
+    elseif var == "E"
+        x = [sol_i.E_field for sol_i in sol_vec]*1e-2
+        ax.xlabel = "E-Field (V/cm)"
+    end
+    x = rev ? reverse(x) : x
+    startingState = rev ? sol_vec[end].vec[:, calculate.findMaxOverlap(stateOI, sol_vec[end].vec)] : sol_vec[1].vec[:,calculate.findMaxOverlap(stateOI, sol_vec[1].vec)]
+    startingInd  = rev ? calculate.findMaxOverlap(stateOI, sol_vec[end].vec) : calculate.findMaxOverlap(stateOI, sol_vec[1].vec)
+    transition_dipole_moment_vec = []
+    mag = 0
+    for (indF, field) in enumerate(x)
+        stateC = Adiabatic ? (rev ? reverse(sol_vec)[indF].vec[:, startingInd] : sol_vec[indF].vec[:, startingInd])  : diabaticRamp(startingState, sol_vec, [x[1], field], Field = var)   
+        #println(typeof(stateC))
+        #println(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF] : sol_vec[indF], comp = comp))
+        tdm_field =  sum(abs.(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF].vec : sol_vec[indF].vec, comp = comp)), dims = 2)
+        if maximum(tdm_field) > mag
+            mag = maximum(tdm_field)
+        end
+        push!(transition_dipole_moment_vec,tdm_field)
+    end
+
+
+    x = rev ? reverse(x) : x
+    stateInds = [calculate.findMaxOverlap(stateFinal, sol_v.vec) for sol_v in sol_vec]
+    tdms = [tdm[stateInds[ind]] for (ind, tdm) in enumerate(transition_dipole_moment_vec)]
+    color = rev ? reverse(tdms) ./ mag : tdms ./ mag
+    color = 1 .- color
+     
+    plotObj.lines!(ax, x, [sol_i.val[stateInds[ind]] - energyRef for (ind, sol_i) in enumerate(sol_vec)]*1e-9; color = color, colormap = :greys )
+    cb = plotObj.Colorbar(fig[1, 2], colormap = :greys, range = 0:0.01:mag, label = "Transition Dipole Moment", vertical = true)
+    fig
+end
+function plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::Vector{<:ComplexF64}, sol_vec::Vector{sol}, var::String; Adiabatic = true, rev = true,  N = [0], Beam = 1, energyRef = 0 , comp = [1.0, 1.0, 1.0])
+    basisUC = getBasisUC(mol.MolOp.basisTree)
+    spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
+    indsOI = [[sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])] for N_i in N]
+    x = Vector{Float64}(undef, length([1 for i in sol_vec]))
+
+    plotObj = CairoMakie
+
+    fig = plotObj.Figure()
+    ax = plotObj.Axis(fig[1, 1], ylabel = "Energy (GHz)")
+    if var == "I"
+        x = [sol_i.Intensity[Beam] for sol_i in sol_vec]
+        ax.xlabel = "Intensity (W/m)"
+    elseif  var =="B"
+        x = [sol_i.B_field for sol_i in sol_vec]*1e-4
+        ax.xlabel = "B-Field (G)"
+    elseif var == "E"
+        x = [sol_i.E_field for sol_i in sol_vec]*1e-2
+        ax.xlabel = "E-Field (V/cm)"
+    end
+    x = rev ? reverse(x) : x
+    startingState = rev ? sol_vec[end].vec[:, calculate.findMaxOverlap(stateOI, sol_vec[end].vec)] : sol_vec[1].vec[:,calculate.findMaxOverlap(stateOI, sol_vec[1].vec)]
+    startingInd  = rev ? calculate.findMaxOverlap(stateOI, sol_vec[end].vec) : calculate.findMaxOverlap(stateOI, sol_vec[1].vec)
+    transition_dipole_moment_vec = []
+    mag = 0
+    for (indF, field) in enumerate(x)
+        stateC = Adiabatic ? (rev ? reverse(sol_vec)[indF].vec[:, startingInd] : sol_vec[indF].vec[:, startingInd])  : diabaticRamp(startingState, sol_vec, [x[1], field], Field = var)   
+        #println(typeof(stateC))
+        #println(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF] : sol_vec[indF], comp = comp))
+        tdm_field =  sum(abs.(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF].vec : sol_vec[indF].vec, comp = comp)), dims = 2)
+        if maximum(tdm_field) > mag
+            mag = maximum(tdm_field)
+        end
+        push!(transition_dipole_moment_vec,tdm_field)
+    end
+
+
+    x = rev ? reverse(x) : x
+    for rotationalStates in indsOI, state in (rotationalStates[1] + 1):rotationalStates[2]
+        tdms = [tdm[state] for tdm in transition_dipole_moment_vec]
+        color = rev ? reverse(tdms) ./ mag : tdms ./ mag
+        color = 1 .- color
+    # Create an RGBA color map based on the normalized color values
+        
+        plotObj.lines!(ax, x, [sol_i.val[state] - energyRef for sol_i in sol_vec]*1e-9; color = color, colormap = :greys )
+
+    end
+    cb = plotObj.Colorbar(fig[1, 2], colormap = :greys, range = 0:0.01:mag, label = "Transition Dipole Moment", vertical = true)
+    fig
+
+end
+
+
+end
 
 
 
