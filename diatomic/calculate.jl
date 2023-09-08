@@ -52,13 +52,15 @@ end
 
 
 
+
+
 function magnetic_moment(H::MoleculeHamiltonian, eigenstates)
     muz = zeeman_ham(H.MolOp, [0, 0, 1.0])
     @tullio mu[k] := conj.(eigenstates)[j, k]*muz[j, l]*eigenstates[l, k]
 end
 
 function electric_moment(H::MoleculeHamiltonian, eigenstates)
-    dz = -1*dc(H.MolOp, [0, 0, 1.0])
+    dz = H.Hdc#-1*dc(H.MolOp, [0, 0, 1.0])
     @tullio d[k] := conj.(eigenstates)[j, k]*dz[j, l]*eigenstates[l, k]
 end
 
@@ -113,6 +115,10 @@ function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigs
 
     stateName, eigvec, eigval, tdm
 end
+
+
+
+
 function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigsol::sol, N::Vector{<:Int};  M = [-1, 0, 1], NumOfStates = 50, comp = [1.0, 1, 1], display = true)
     indOI = findState(stateOI, eigsol)
     basisUC = getBasisUC(H.MolOp.basisTree)
@@ -140,18 +146,16 @@ end
 
 
 findMaxOverlap(basisState::State, eigvec) = findMaxOverlap(Ket(basisState), eigvec)
-function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec)
-    overlap = 0
-    indOI = 0 
-    for ind in 1:size(eigvec, 2)
-        overlapcurr = abs2.(dot(basisState, eigvec[:, ind]))
-        if overlapcurr >= overlap
-            overlap = overlapcurr
-            indOI = ind
-        end
-    end
-    indOI
+findMaxOverlap(basisState::State, eigvec, ind) = findMaxOverlap(Ket(basisState), eigvec)
+function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec, indS)
+    argmax(abs.(transpose(eigvec)*basisState))
 end
+function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec)
+    argmax(abs.(transpose(eigvec)*basisState))
+
+end
+
+
 
 
 diabaticRamp(startingState::State, eigsol_vec::Vector{sol}, Field_ramp::Vector{Float64}; Field = "B") = diabaticRamp(Ket(startingState), eigsol_vec, Field_ramp, Field = Field)

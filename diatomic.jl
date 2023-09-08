@@ -29,7 +29,7 @@ using ..QuantumWrapper.SpinOperator
 using LinearAlgebra
 using SparseArrays
 export moleculeProperties, generatorMolecule
-struct moleculeProperties{T<:Node} 
+struct moleculeProperties{T<:Node}
     Constants
     basisTree::T
     N
@@ -45,7 +45,7 @@ function generateMolecule(MoleculeInfo, Nmax)
     F = couple("F", N, I_c)
     Nop, I2op, I1op = generateSpinOperator(F)
     moleculeProperties(MoleculeInfo,F, Nop, I1op, I2op)
-end 
+end
 function generateSpinOperator(F::Node)
     EndNodes = endNode(F)
     Operators = []
@@ -84,7 +84,7 @@ using Arpack
 using SparseArrays
 
 
-struct sol
+mutable struct sol
     B_field
     E_field
     Intensity
@@ -93,8 +93,8 @@ struct sol
 end
 
 function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,  nev = 36) where {T<:AbstractMatrix}
-    J2Hz = 1.509190311676e33 
-    
+    J2Hz = 1.509190311676e33
+
     vals, vecs = eigen(Hermitian(Matrix(H.Hhfs .+ H.Hzeem*B_field .+ E_field*H.Hdc + sum(Intensity .* H.Hac))))
     sorted_indices = sortperm(vals)
     vals = vals[sorted_indices]
@@ -102,7 +102,7 @@ function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,
     sol(B_field, E_field, [Intensity...], vecs, vals*J2Hz)
 end
 function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,  nev = 36) where T<:SparseMatrixCSC
-    J2Hz = 1.509190311676e33 
+    J2Hz = 1.509190311676e33
     vals, vecs = eigs(H.Hhfs .+ H.Hzeem*B_field .+ E_field*H.Hdc + sum(Intensity .* H.Hac), nev = nev, which=:SM)
     sorted_indices = sortperm(real.(vals))
     vals = vals[sorted_indices]
@@ -111,7 +111,7 @@ function diagonalize(H::MoleculeHamiltonian{T}, B_field, E_field; Intensity = 1,
 end
 
 function scanIntensity(H::MoleculeHamiltonian, B_Field::T, E_Field::T, Intensity) where T<:Number
-    J2Hz = 1.509190311676e33 
+    J2Hz = 1.509190311676e33
     solutions = Vector{sol}(undef, size(Intensity, 1))
     for (i, Int_i) in enumerate(Intensity)
         solutions[i] = diagonalize(H, B_Field, E_Field, Intensity = Int_i)
@@ -121,7 +121,7 @@ end
 
 
 function scanZeeman(H::MoleculeHamiltonian, B_field::Vector{<:Real}, E_field::T; Intensity = 1, nev = 36) where T<:Number
-    J2Hz = 1.509190311676e33 
+    J2Hz = 1.509190311676e33
     solutions = Vector{sol}(undef, length(B_field))
     for (i, B_i) in enumerate(B_field)
         solutions[i] = diagonalize(H, B_i , E_field, Intensity = 1, nev = nev)
@@ -129,7 +129,7 @@ function scanZeeman(H::MoleculeHamiltonian, B_field::Vector{<:Real}, E_field::T;
     solutions
 end
 function scanStark(H::MoleculeHamiltonian, B_field::T, E_field::Vector{<:Real}; Intensity = 1, nev = 36) where T<:Number
-    J2Hz = 1.509190311676e33 
+    J2Hz = 1.509190311676e33
     solutions = Vector{sol}(undef, length(E_field))
     for (i, E_i) in enumerate(E_field)
         solutions[i] = diagonalize(H, B_field , E_i, Intensity= 1, nev = nev)
@@ -142,7 +142,7 @@ end
 
 
 module calculate
-export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment, diabaticRamp, findMaxOverlap, findAvoidedCrossing, scanDiabiaticEnergy
+export findState, findTransition, transition_dipole_moment, electric_moment, magnetic_moment, diabaticRamp, findMaxOverlap, findAvoidedCrossing, scanDiabiaticEnergy, diabaticOrder
 using ..QuantumWrapper.State_Toolbox
 import ..QuantumWrapper.AM_Toolbox: Basis, Node, getBasisUC, endNode
 import ..Hamiltonian: MoleculeHamiltonian, DipoleMatrix, zeeman_ham, dc
@@ -152,6 +152,49 @@ import ..QuantumWrapper.State_Toolbox.State
 import ..QuantumWrapper.State_Toolbox.Ket
 import ..QuantumWrapper.State_Toolbox.KetName
 include("diatomic/calculate.jl")
+function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec, indS)
+
+    #=
+    indStart = indS - lims < 1 ? 1 : indS - lims
+    indEnd = indS + lims > size(eigvec, 2) ? size(eigvec, 2)  : indS + lims
+    for ind in indStart:indEnd
+        overlapcurr = abs.(dot(conj.(basisState),(eigvec[:, ind])))
+        if overlapcurr > overlap
+            overlap = overlapcurr
+            indOI = ind
+        end
+    end
+    =#
+    argmax(abs.(transpose(eigvec)*basisState))
+end
+
+function diabaticOrder(Hmol::MoleculeHamiltonian, eigsol_vec::Vector{sol}; rev = true)
+    iters = length([i for i in eigsol_vec])
+    diabaticVec = sol[]
+    if rev
+        push!(diabaticVec, eigsol_vec[end])
+        for (indOI, sol_i) in enumerate(reverse(eigsol_vec[1:(iters-1)]))
+            indOrder = []
+            for (start, col) in enumerate(eachcol(diabaticVec[end].vec))
+                push!(indOrder, findMaxOverlap(Vector(col), sol_i.vec, start))
+            end
+            push!(diabaticVec,sol(sol_i.B_field, sol_i.E_field, sol_i.Intensity, sol_i.vec[:, indOrder], sol_i.val[indOrder]))
+        end
+        return reverse(diabaticVec)
+    else 
+        push!(diabaticVec, eigsol_vec[1])
+        for sol_i in eigsol_vec[2:end]
+            indOrder = []
+            for (start, col) in enumerate(eachcol(diabaticVec[end].vec))
+                push!(indOrder, findMaxOverlap(Vector(col), sol_i.vec, start))
+            end
+            push!(diabaticVec,sol(sol_i.B_field, sol_i.E_field, sol_i.Intensity, sol_i.vec[:, indOrder], sol_i.val[indOrder]))
+        end
+        return diabaticVec
+    end
+
+end
+
 
 State(comp::Array{ComplexF64, 2}, QN::Array{Float64, 2}, mol::MoleculeHamiltonian) = State(normalize!(comp), QN, getBasisUC(mol.MolOp.basisTree))
 State(QN::Vector{<:Float64}, mol::MoleculeHamiltonian) = State([1.0], [QN], getBasisUC(mol.MolOp.basisTree) )
@@ -161,8 +204,9 @@ KetName(state::State, mol::MoleculeHamiltonian; QMorder = [5, 3, 2, 1]) = KetNam
 KetName(state::State) = KetName(Ket(state), state.basis)
 end
 module plotting
-export plotZeemanMap, plotStarkMap, plotIntensityScan, plotTransitionPlot
+export plotZeemanMap, plotStarkMap, plotIntensityScan, plotTransitionPlot, plotMagneticMoment
 using ..QuantumWrapper.State_Toolbox
+using LinearAlgebra
 using ..QuantumWrapper.AM_Toolbox
 import ..Hamiltonian: MoleculeHamiltonian
 import ..QuantumWrapper.State_Toolbox.Ket
@@ -171,6 +215,68 @@ using ..calculate
 import CairoMakie
 #import GLMakie
 include("diatomic/plotting.jl")
+
+function plotMagneticMoment(mol::MoleculeHamiltonian, sol_vec::Vector{sol}, var::String; N = [0], Beam = nothing)
+    x = Vector{Float64}(undef, length([1 for i in sol_vec]))
+    if var == "I"
+        x = [sol_i.Intensity[Beam] for sol_i in sol_vec]
+        xlabel = "Intensity (W/m)"
+    elseif  var =="B"
+        x = [sol_i.B_field for sol_i in sol_vec]*1e4
+        xlabel = "B-Field (G)"
+    elseif var == "E"
+        x = [sol_i.E_field for sol_i in sol_vec]*1e-2
+        xlabel = "E-Field (V/cm)"
+    end
+
+    sol_vec = diabaticOrder(mol, sol_vec)
+    uN = 5.0507837461e-27
+    mag_mom = []
+    for sol_i in sol_vec
+        push!(mag_mom, real.(magnetic_moment(mol, sol_i.vec))./uN)
+    end
+    mag_plot = hcat(mag_mom...)
+    basisUC = getBasisUC(mol.MolOp.basisTree)
+    spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
+    indsOI = [[sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])] for N_i in N]
+    p = plot()
+    for rotationalStates in indsOI,  state in (rotationalStates[1] + 1):rotationalStates[2]
+        addtraces!(p, scatter(x = x, y = vec(mag_plot[state, :]), text=[KetName(sol_i.vec[:, state], basisUC) for sol_i in sol_vec], name = "State $state"))
+    end
+    set_figure_style!(p, title = "Magnetic Moment", xlabel = "B-Field (G)", ylabel = "Magnetic Moment (muN)")
+    p
+end
+
+function plotElectricMoment(mol::MoleculeHamiltonian, sol_vec::Vector{sol}, var::String; N = [0], Beam = nothing)
+    debye = 3.33564e-30
+    x = Vector{Float64}(undef, length([1 for i in sol_vec]))
+    if var == "I"
+        x = [sol_i.Intensity[Beam] for sol_i in sol_vec]
+        xlabel = "Intensity (W/m)"
+    elseif  var =="B"
+        x = [sol_i.B_field for sol_i in sol_vec]*1e4
+        xlabel = "B-Field (G)"
+    elseif var == "E"
+        x = [sol_i.E_field for sol_i in sol_vec]*1e-2
+        xlabel = "E-Field (V/cm)"
+    end
+
+    sol_vec = diabaticOrder(mol, sol_vec)
+    mag_mom = []
+    for sol_i in sol_vec
+        push!(mag_mom, real.(electric_moment(mol, sol_i.vec))./debye)
+    end
+    mag_plot = hcat(mag_mom...)
+    basisUC = getBasisUC(mol.MolOp.basisTree)
+    spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
+    indsOI = [[sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])] for N_i in N]
+    p = plot()
+    for rotationalStates in indsOI,  state in (rotationalStates[1] + 1):rotationalStates[2]
+        addtraces!(p, scatter(x = x, y = vec(mag_plot[state, :]), text=[KetName(sol_i.vec[:, state], basisUC) for sol_i in sol_vec], name = "State $state"))
+    end
+    set_figure_style!(p, title = "Electric Moment", xlabel = xlabel, ylabel = "Electric Moment (debye)")
+    p
+end
 
 plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::State, sol_vec::Vector{sol}, var::String; Adiabatic = true, rev = true,  N = [0], Beam = 1, energyRef = 0 , comp = [1.0, 1.0, 1.0]) = plotTransitionPlot(mol, Ket(stateOI), sol_vec, var; Adiabatic = Adiabatic, rev = rev,  N = N, Beam = Beam, energyRef = energyRef , comp = comp)
 plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::State,  stateFinal::State, sol_vec::Vector{sol}, var::String; Adiabatic = true, rev = true, Beam = 1, energyRef = 0 , comp = [1.0, 1.0, 1.0]) = plotTransitionPlot(mol, Ket(stateOI), Ket(stateFinal), sol_vec, var; Adiabatic = Adiabatic, rev = rev, Beam = Beam, energyRef = energyRef , comp = comp)
@@ -197,10 +303,10 @@ function plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::Vector{<:ComplexF
     transition_dipole_moment_vec = []
     mag = 0
     for (indF, field) in enumerate(x)
-        stateC = Adiabatic ? (rev ? reverse(sol_vec)[indF].vec[:, startingInd] : sol_vec[indF].vec[:, startingInd])  : diabaticRamp(startingState, sol_vec, [x[1], field], Field = var)   
+        stateC = Adiabatic ? (rev ? reverse(sol_vec)[indF].vec[:, startingInd] : sol_vec[indF].vec[:, startingInd])  : diabaticRamp(startingState, sol_vec, [x[1], field], Field = var)
         #println(typeof(stateC))
         #println(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF] : sol_vec[indF], comp = comp))
-        tdm_field =  sum(abs.(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF].vec : sol_vec[indF].vec, comp = comp)), dims = 2)
+        tdm_field =  sum(abs.(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF].vec : sol_vec[indF].vec, comp = normalize!(comp))), dims = 2)
         if maximum(tdm_field) > mag
             mag = maximum(tdm_field)
         end
@@ -211,11 +317,18 @@ function plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::Vector{<:ComplexF
     x = rev ? reverse(x) : x
     stateInds = [calculate.findMaxOverlap(stateFinal, sol_v.vec) for sol_v in sol_vec]
     tdms = [tdm[stateInds[ind]] for (ind, tdm) in enumerate(transition_dipole_moment_vec)]
-    color = rev ? reverse(tdms) ./ mag : tdms ./ mag
-    color = 1 .- color
-     
-    plotObj.lines!(ax, x, [sol_i.val[stateInds[ind]] - energyRef for (ind, sol_i) in enumerate(sol_vec)]*1e-9; color = color, colormap = :greys )
-    cb = plotObj.Colorbar(fig[1, 2], colormap = :greys, range = 0:0.01:mag, label = "Transition Dipole Moment", vertical = true)
+    
+    color = rev ? log10.(reverse(tdms) ./ mag)  : log10.(tdms ./ mag)
+
+
+    lplot = plotObj.lines!(ax, x, [sol_i.val[stateInds[ind]] - energyRef for (ind, sol_i) in enumerate(sol_vec)]*1e-9; color = color, colormap = plotObj.Reverse(:tokyo25), colorrange = (log10(1e-2), log10(1)))
+
+    custom_formatter(values) = map(
+        v -> "10" * plotObj.Makie.UnicodeFun.to_superscript(round(Int64, v)),
+        values
+    )
+    
+    cb = plotObj.Colorbar(fig[1, 2], lplot,   ticks =log10.([1e-2, 1e-1, 1e0]), tickformat=custom_formatter,  label = "Transition Dipole Moment", vertical = true)
     fig
 end
 function plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::Vector{<:ComplexF64}, sol_vec::Vector{sol}, var::String; Adiabatic = true, rev = true,  N = [0], Beam = 1, energyRef = 0 , comp = [1.0, 1.0, 1.0])
@@ -232,7 +345,7 @@ function plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::Vector{<:ComplexF
         x = [sol_i.Intensity[Beam] for sol_i in sol_vec]
         ax.xlabel = "Intensity (W/m)"
     elseif  var =="B"
-        x = [sol_i.B_field for sol_i in sol_vec]*1e-4
+        x = [sol_i.B_field for sol_i in sol_vec]*1e4
         ax.xlabel = "B-Field (G)"
     elseif var == "E"
         x = [sol_i.E_field for sol_i in sol_vec]*1e-2
@@ -244,28 +357,34 @@ function plotTransitionPlot(mol::MoleculeHamiltonian, stateOI::Vector{<:ComplexF
     transition_dipole_moment_vec = []
     mag = 0
     for (indF, field) in enumerate(x)
-        stateC = Adiabatic ? (rev ? reverse(sol_vec)[indF].vec[:, startingInd] : sol_vec[indF].vec[:, startingInd])  : diabaticRamp(startingState, sol_vec, [x[1], field], Field = var)   
+        stateC = Adiabatic ? (rev ? reverse(sol_vec)[indF].vec[:, startingInd] : sol_vec[indF].vec[:, startingInd])  : diabaticRamp(startingState, sol_vec, [x[1], field], Field = var)
         #println(typeof(stateC))
         #println(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF] : sol_vec[indF], comp = comp))
-        tdm_field =  sum(abs.(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF].vec : sol_vec[indF].vec, comp = comp)), dims = 2)
+        tdm_field =  sum(abs.(calculate.transition_dipole_moment(mol, stateC, rev ? reverse(sol_vec)[indF].vec : sol_vec[indF].vec, comp = normalize!(comp))), dims = 2)
         if maximum(tdm_field) > mag
             mag = maximum(tdm_field)
         end
+
         push!(transition_dipole_moment_vec,tdm_field)
     end
 
-
     x = rev ? reverse(x) : x
+    lplot = 0
     for rotationalStates in indsOI, state in (rotationalStates[1] + 1):rotationalStates[2]
         tdms = [tdm[state] for tdm in transition_dipole_moment_vec]
-        color = rev ? reverse(tdms) ./ mag : tdms ./ mag
-        color = 1 .- color
+        color = rev ? log10.(reverse(tdms)) : log10.(tdms)
+        #color = 1 .- color
     # Create an RGBA color map based on the normalized color values
-        
-        plotObj.lines!(ax, x, [sol_i.val[state] - energyRef for sol_i in sol_vec]*1e-9; color = color, colormap = :greys )
+
+        lplot = plotObj.lines!(ax, x, [sol_i.val[state] - energyRef for sol_i in sol_vec]*1e-9; color = color, colormap = plotObj.Reverse(:tokyo25), colorrange = (log10(1e-2), log10(1)) )
 
     end
-    cb = plotObj.Colorbar(fig[1, 2], colormap = :greys, range = 0:0.01:mag, label = "Transition Dipole Moment", vertical = true)
+    custom_formatter(values) = map(
+        v -> "10" * plotObj.Makie.UnicodeFun.to_superscript(round(Int64, v)),
+        values
+    )
+    
+    cb = plotObj.Colorbar(fig[1, 2], lplot,   ticks =log10.([1e-2, 1e-1, 1e0]), tickformat=custom_formatter,  label = "Transition Dipole Moment", vertical = true)
     fig
 
 end
