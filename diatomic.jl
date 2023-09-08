@@ -18,6 +18,27 @@ function getBasisUC end
 module MoleculeTypes
 include("diatomic/MolecularConsts.jl")
 export Rb87Cs133, K41Cs133, K40Rb87 ,Na23K40, Na23Rb87, K40Rb87T
+Rb87Cs133 = Dict(
+    "Name" => "Rb87Cs133",
+    "I1" => 1.5,
+    "I2" => 3.5,
+    "d0" => 1.225 * DebyeSI,
+    "binding" => 114268135.25e6 * h,
+    "Brot" => 490.173994326310e6 * h,
+    "Drot" => 207.3 * h,
+    "Q1" => -809.29e3 * h,
+    "Q2" => 59.98e3 * h,
+    "C1" => 98.4 * h,
+    "C2" => 194.2 * h,
+    "C3" => 192.4 * h,
+    "C4" => 19.0189557e3 * h,
+    "MuN" => 0.0062 * muN,
+    "Mu1" => 1.8295 * muN,
+    "Mu2" => 0.7331 * muN,
+    "a0":2020*4*pi*eps0*bohr^3, #1064nm
+    "a2":1997*4*pi*eps0*bohr^3, #1064nm
+    "Beta" => 0
+)
 end
 
 
@@ -73,6 +94,22 @@ include("diatomic/Hamiltonian.jl")
 using ..diatomic_jl
 import ..diatomic_jl: getBasisUC
 getBasisUC(mol::MoleculeHamiltonian) = AM_Toolbox.getBasisUC(mol.MolOp.basisTree)
+
+
+function AC_Stark(M::moleculeProperties, Beam::OpticalBeam)
+    mag = sqrt(2*Beam.Intensity/(PhysConstants["c"]*PhysConstants["e0"]))#/10000#/sqrt(2)
+    a0, a2 = M.Constants["a0"], M.Constants["a2"]
+    dims = prod([length(node.spin) for node in endNode(M.basisTree)])
+    pol = normalize(Beam.pol_space)
+    
+    A2 = sqrt(3/2)*T2_C(M)
+    P2 = [scaler*sparse(1.0I, dims, dims) for scaler in makeT2(pol, conj.(pol))]
+    -mag^2*(sparse(1.0I, dims, dims)*a0 + tensor_dot(A2, P2, order = 2)*a2)/4
+end
+
+
+
+
 end
 
 ##### Used to solve the Hamiltonian ################################
