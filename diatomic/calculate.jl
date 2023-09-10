@@ -55,7 +55,7 @@ end
 
 
 function magnetic_moment(H::MoleculeHamiltonian, eigenstates)
-    muz = zeeman_ham(H.MolOp, [0, 0, 1.0])
+    muz = H.Hzeem#zeeman_ham(H.MolOp, [0, 0, 1.0])
     @tullio mu[k] := conj.(eigenstates)[j, k]*muz[j, l]*eigenstates[l, k]
 end
 
@@ -144,16 +144,6 @@ function findTransition(H::MoleculeHamiltonian, stateOI::Vector{<:Complex}, eigs
 end
 
 
-
-findMaxOverlap(basisState::State, eigvec) = findMaxOverlap(Ket(basisState), eigvec)
-findMaxOverlap(basisState::State, eigvec, ind) = findMaxOverlap(Ket(basisState), eigvec)
-function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec, indS)
-    argmax(abs.(transpose(eigvec)*basisState))
-end
-function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec)
-    argmax(abs.(transpose(eigvec)*basisState))
-
-end
 
 
 

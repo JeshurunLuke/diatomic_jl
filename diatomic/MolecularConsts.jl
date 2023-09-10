@@ -10,7 +10,27 @@ DebyeSI = 3.33564e-30
 
 # Rb87Cs133 Constants
 
-
+Rb87Cs133 = Dict(
+    "Name" => "Rb87Cs133",
+    "I1" => 1.5,
+    "I2" => 3.5,
+    "d0" => 1.225 * DebyeSI,
+    "binding" => 114268135.25e6 * h,
+    "Brot" => 490.173994326310e6 * h,
+    "Drot" => 207.3 * h,
+    "Q1" => -809.29e3 * h,
+    "Q2" => 59.98e3 * h,
+    "C1" => 98.4 * h,
+    "C2" => 194.2 * h,
+    "C3" => 192.4 * h,
+    "C4" => 19.0189557e3 * h,
+    "MuN" => 0.0062 * muN,
+    "Mu1" => 1.8295 * muN,
+    "Mu2" => 0.7331 * muN,
+    "a0" => 2020*4*pi*eps0*bohr^3, #1064nm
+    "a2" => 1997*4*pi*eps0*bohr^3, #1064nm
+    "Beta" => 0
+)
 # K41Cs133 Constants
 K41Cs133 = Dict(
     "Name" => "K41Cs133",

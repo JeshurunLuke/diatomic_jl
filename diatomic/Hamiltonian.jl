@@ -224,7 +224,7 @@ end
 
 
 function AC_Stark(M::moleculeProperties, Beam::OpticalBeam)
-    mag = sqrt(2*Beam.Intensity/(PhysConstants["c"]*PhysConstants["e0"]))/sqrt(2)
+    mag = sqrt(2*Beam.Intensity/(PhysConstants["c"]*PhysConstants["e0"]))
     a0, a2 = M.Constants["a0"], M.Constants["a2"]
     dims = prod([length(node.spin) for node in endNode(M.basisTree)])
     pol = normalize(Beam.pol_space)

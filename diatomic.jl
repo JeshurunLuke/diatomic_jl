@@ -18,27 +18,7 @@ function getBasisUC end
 module MoleculeTypes
 include("diatomic/MolecularConsts.jl")
 export Rb87Cs133, K41Cs133, K40Rb87 ,Na23K40, Na23Rb87, K40Rb87T
-Rb87Cs133 = Dict(
-    "Name" => "Rb87Cs133",
-    "I1" => 1.5,
-    "I2" => 3.5,
-    "d0" => 1.225 * DebyeSI,
-    "binding" => 114268135.25e6 * h,
-    "Brot" => 490.173994326310e6 * h,
-    "Drot" => 207.3 * h,
-    "Q1" => -809.29e3 * h,
-    "Q2" => 59.98e3 * h,
-    "C1" => 98.4 * h,
-    "C2" => 194.2 * h,
-    "C3" => 192.4 * h,
-    "C4" => 19.0189557e3 * h,
-    "MuN" => 0.0062 * muN,
-    "Mu1" => 1.8295 * muN,
-    "Mu2" => 0.7331 * muN,
-    "a0":2020*4*pi*eps0*bohr^3, #1064nm
-    "a2":1997*4*pi*eps0*bohr^3, #1064nm
-    "Beta" => 0
-)
+
 end
 
 
@@ -189,21 +169,52 @@ import ..QuantumWrapper.State_Toolbox.State
 import ..QuantumWrapper.State_Toolbox.Ket
 import ..QuantumWrapper.State_Toolbox.KetName
 include("diatomic/calculate.jl")
+findMaxOverlap(basisState::State, eigvec) = findMaxOverlap(Ket(basisState), eigvec)
+findMaxOverlap(basisState::State, eigvec, ind) = findMaxOverlap(Ket(basisState), eigvec)
 function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec, indS)
-
+    argmax(abs.(transpose(eigvec)*basisState))
+end
+function findMaxOverlap(basisState::Vector{<:ComplexF64}, eigvec)
     #=
-    indStart = indS - lims < 1 ? 1 : indS - lims
-    indEnd = indS + lims > size(eigvec, 2) ? size(eigvec, 2)  : indS + lims
-    for ind in indStart:indEnd
-        overlapcurr = abs.(dot(conj.(basisState),(eigvec[:, ind])))
-        if overlapcurr > overlap
+    overlap = 0
+    
+    indOI = 0 
+
+    for ind in 1:size(eigvec, 2)
+        overlapcurr = abs2.(dot(basisState, eigvec[:, ind]))
+        if overlapcurr >= overlap
             overlap = overlapcurr
             indOI = ind
         end
     end
+    indOI
     =#
     argmax(abs.(transpose(eigvec)*basisState))
+
 end
+
+
+function magnetic_moment(H::MoleculeHamiltonian, eigsols::Vector{sol}; rev = true) # Returns the magnetic moment with each row as an eigenstate
+    uN = 5.0507837461e-27
+    sol_vec = diabaticOrder(H, eigsols, rev = rev)
+    mag_mom = []
+    for sol_i in sol_vec
+        push!(mag_mom, real.(magnetic_moment(H, sol_i.vec))./uN)
+    end
+    mag_mom = hcat(mag_mom...)
+end
+
+function electric_moment(H::MoleculeHamiltonian, eigsols::Vector{sol}; rev = true)
+    debye = 3.33564e-30
+    sol_vec = diabaticOrder(H, eigsols, rev = rev)
+    dip_mom = []
+    for sol_i in sol_vec
+        push!(dip_mom, real.(electric_moment(H, sol_i.vec))./debye)
+    end
+    dip_mom = hcat(dip_mom...) 
+end
+
+
 
 function diabaticOrder(Hmol::MoleculeHamiltonian, eigsol_vec::Vector{sol}; rev = true)
     iters = length([i for i in eigsol_vec])
@@ -241,7 +252,7 @@ KetName(state::State, mol::MoleculeHamiltonian; QMorder = [5, 3, 2, 1]) = KetNam
 KetName(state::State) = KetName(Ket(state), state.basis)
 end
 module plotting
-export plotZeemanMap, plotStarkMap, plotIntensityScan, plotTransitionPlot, plotMagneticMoment
+export plotZeemanMap, plotStarkMap, plotIntensityScan, plotTransitionPlot, plotMagneticMoment, plotDiabiatic
 using ..QuantumWrapper.State_Toolbox
 using LinearAlgebra
 using ..QuantumWrapper.AM_Toolbox
@@ -266,13 +277,8 @@ function plotMagneticMoment(mol::MoleculeHamiltonian, sol_vec::Vector{sol}, var:
         xlabel = "E-Field (V/cm)"
     end
 
-    sol_vec = diabaticOrder(mol, sol_vec)
-    uN = 5.0507837461e-27
-    mag_mom = []
-    for sol_i in sol_vec
-        push!(mag_mom, real.(magnetic_moment(mol, sol_i.vec))./uN)
-    end
-    mag_plot = hcat(mag_mom...)
+
+    mag_plot = magnetic_moment(mol, sol_vec)
     basisUC = getBasisUC(mol.MolOp.basisTree)
     spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
     indsOI = [[sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])] for N_i in N]
@@ -284,8 +290,37 @@ function plotMagneticMoment(mol::MoleculeHamiltonian, sol_vec::Vector{sol}, var:
     p
 end
 
+
+function plotDiabiatic(mol::MoleculeHamiltonian, sol_vec::Vector{sol}, var::String; N = [0], Beam = nothing, rev = true)
+    x = Vector{Float64}(undef, length([1 for i in sol_vec]))
+    if var == "I"
+        x = [sol_i.Intensity[Beam] for sol_i in sol_vec]
+        xlabel = "Intensity (W/m)"
+        title = "Intensity Scan"
+    elseif  var =="B"
+        x = [sol_i.B_field for sol_i in sol_vec]*1e4
+        xlabel = "B-Field (G)"
+        title = "Zeeman Scan"
+    elseif var == "E"
+        x = [sol_i.E_field for sol_i in sol_vec]*1e-2
+        xlabel = "E-Field (V/cm)"
+        title = "Stark Scan"
+    end
+
+    sol_vec = diabaticOrder(mol, sol_vec, rev = rev)
+
+    basisUC = getBasisUC(mol.MolOp.basisTree)
+    spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
+    indsOI = [[sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])] for N_i in N]
+    p = plot()
+    for rotationalStates in indsOI,  state in (rotationalStates[1] + 1):rotationalStates[2]
+        addtraces!(p, scatter(x = x, y = vec([sol_i.val[state] for sol_i in sol_vec]), text=[KetName(sol_i.vec[:, state], basisUC) for sol_i in sol_vec], name = "State $state"))
+    end
+    set_figure_style!(p, title = title, xlabel = xlabel, ylabel = "Energy (GHz)")
+    p
+end
 function plotElectricMoment(mol::MoleculeHamiltonian, sol_vec::Vector{sol}, var::String; N = [0], Beam = nothing)
-    debye = 3.33564e-30
+    
     x = Vector{Float64}(undef, length([1 for i in sol_vec]))
     if var == "I"
         x = [sol_i.Intensity[Beam] for sol_i in sol_vec]
@@ -298,12 +333,8 @@ function plotElectricMoment(mol::MoleculeHamiltonian, sol_vec::Vector{sol}, var:
         xlabel = "E-Field (V/cm)"
     end
 
-    sol_vec = diabaticOrder(mol, sol_vec)
-    mag_mom = []
-    for sol_i in sol_vec
-        push!(mag_mom, real.(electric_moment(mol, sol_i.vec))./debye)
-    end
-    mag_plot = hcat(mag_mom...)
+
+    mag_plot = electric_moment(mol, sol_vec)
     basisUC = getBasisUC(mol.MolOp.basisTree)
     spinDim = prod([length(NuclearSpin.spin) for NuclearSpin in endNode(mol.MolOp.basisTree)[2:end]])
     indsOI = [[sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:(N_i-1)]), sum([(2*N_i2 + 1)*spinDim for N_i2 in 0:N_i])] for N_i in N]
